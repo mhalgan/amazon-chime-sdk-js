@@ -41,6 +41,11 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
   private videoMaxBandwidthKbps: number = DefaultDeviceController.defaultVideoMaxBandwidthKbps;
 
   private useWebAudio: boolean = false;
+  private deviceIdGroupIdMap: { [mediaDeviceKind: string]: Map<Device, string> } = {
+    audioinput: new Map(),
+    audiooutput: new Map(),
+    videoinput: new Map(),
+  };
 
   private isAndroid: boolean = false;
   private isPixel3: boolean = false;
@@ -394,6 +399,7 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
         hasDeviceLabels = false;
         break;
       }
+      this.deviceIdGroupIdMap[device.kind].set(device.deviceId, device.groupId || '');
     }
     if (!hasDeviceLabels) {
       try {
@@ -475,6 +481,15 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     return device && device.id ? device : null;
   }
 
+  private hasSameGroupId(groupId: string, mediaKind: string, device: Device): boolean {
+    if (device === null && typeof groupId === 'undefined') return true;
+    if (device === null) return false;
+    const deviceJSON = JSON.parse(JSON.stringify(device));
+    if (typeof device !== 'string')
+      device = deviceJSON.deviceId ? deviceJSON.deviceId.exact : deviceJSON.streamId;
+    return groupId === this.deviceIdGroupIdMap[mediaKind].get(device);
+  }
+
   private async chooseInputDevice(
     kind: string,
     device: Device,
@@ -496,17 +511,20 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
       kind,
       device
     );
+
     if (
       this.activeDevices[kind] &&
       this.activeDevices[kind].matchesConstraints(proposedConstraints) &&
-      this.activeDevices[kind].stream.active
+      this.activeDevices[kind].stream.active &&
+      this.activeDevices[kind].groupId !== null &&
+      this.hasSameGroupId(this.activeDevices[kind].groupId, kind + 'input', device)
     ) {
       this.logger.info(`reusing existing ${kind} device`);
       return DevicePermission.PermissionGrantedPreviously;
     }
 
-    const startTimeMs = Date.now();
     const newDevice: DeviceSelection = new DeviceSelection();
+    const startTimeMs = Date.now();
     try {
       this.logger.info(
         `requesting new ${kind} device with constraint ${JSON.stringify(proposedConstraints)}`
@@ -520,9 +538,19 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
         newDevice.stream = stream;
         newDevice.constraints = proposedConstraints;
       } else {
+        // TODO: remove check when the bug is fixed.
+        let activeDevice = JSON.parse(JSON.stringify(device));
+        let activeDeviceId = device;
+        if (typeof activeDeviceId !== 'string')
+          activeDeviceId = activeDevice.deviceId
+            ? activeDevice.deviceId.exact
+            : activeDevice.streamId;
+        console.warn(activeDeviceId);
+        if (kind === 'audio' && this.activeDevices[kind] && activeDeviceId === 'default') {
+          this.activeDevices[kind].stream.getAudioTracks()[0].stop();
+        }
         newDevice.stream = await navigator.mediaDevices.getUserMedia(proposedConstraints);
         newDevice.constraints = proposedConstraints;
-
         if (kind === 'video' && this.lastNoVideoInputDeviceCount > callCount) {
           this.logger.warn(
             `ignored to get video device for constraints ${JSON.stringify(
@@ -550,6 +578,13 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
           }
         });
       }
+
+      let groupId = this.deviceIdGroupIdMap[kind + 'input'].get(device);
+      if (groupId === null) {
+        groupId = '';
+        this.deviceIdGroupIdMap[kind + 'input'].set(device, groupId);
+      }
+      newDevice.groupId = groupId;
     } catch (error) {
       this.logger.error(
         `failed to get ${kind} device for constraints ${JSON.stringify(proposedConstraints)}: ${
@@ -641,8 +676,6 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
       trackConstraints.width = trackConstraints.width || this.videoWidth;
       trackConstraints.height = trackConstraints.height || this.videoHeight;
       trackConstraints.frameRate = trackConstraints.frameRate || this.videoFrameRate;
-      // TODO: try to replace hard-code value related to videos into quality-level presets
-      // The following configs relaxes CPU overuse detection threshold to offer better encoding quality
       // @ts-ignore
       trackConstraints.googCpuOveruseDetection = true;
       // @ts-ignore
