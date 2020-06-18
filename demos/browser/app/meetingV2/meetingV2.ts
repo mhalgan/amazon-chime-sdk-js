@@ -244,7 +244,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
               true
             );
           } catch (err) {
-            this.log('no video input device selected');
+            this.log(`form-authenticate: could not open video input from selection; err: ${err}`);
           }
           await this.openAudioOutputFromSelection();
           this.hideProgress('progress-authenticate');
@@ -313,8 +313,8 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
       try {
         await this.openVideoInputFromSelection(videoInput.value, true);
       } catch (err) {
-        this.log('no video input device selected');
-      }
+        this.log(`video-input: could not open video input from selection; videoInput.value:${videoInput.value} err: ${err}`);
+    }
     });
 
     const optionalFeatures = document.getElementById('optional-features') as HTMLSelectElement;
@@ -352,7 +352,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
       try {
         await this.openVideoInputFromSelection(videoInput.value, true);
       } catch (err) {
-        this.log('no video input device selected');
+        this.log(`video-input-quality: could not open video input from selection; err: ${err}`);
       }
     });
 
@@ -409,8 +409,8 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
             await this.openVideoInputFromSelection(camera, false);
             this.audioVideo.startLocalVideoTile();
           } catch (err) {
-            this.log('no video input device selected');
-          }
+            this.log(`button-camera: could not open video input from selection; err: ${err}`);
+        }
         } else {
           this.audioVideo.stopLocalVideoTile();
           this.hideTile(DemoTileOrganizer.MAX_TILES);
@@ -1117,7 +1117,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
         try {
           await this.openVideoInputFromSelection(name, false);
         } catch (err) {
-          this.log('no video input device selected');
+            this.log(`dropdown-menu-camera: could not open video input from selection; name:${name} err:${err}`);
         }
       }
     );

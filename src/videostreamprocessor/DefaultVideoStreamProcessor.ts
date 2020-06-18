@@ -15,6 +15,7 @@ export interface CanvasElement extends HTMLCanvasElement {
 export default class DefaultVideoStreamProcessor implements VideoStreamProcessor {
     private static defaultFramerate = 15;
 
+    private mediaStreamInput: MediaStream | null;
     private videoInput: HTMLVideoElement = document.createElement('video');
     // Alias for this.videoInput.videoHeight and this.videoInput.videoHeight;
     // updated if necessary every process call
@@ -31,21 +32,28 @@ export default class DefaultVideoStreamProcessor implements VideoStreamProcessor
 
     constructor(private logger: Logger) {}
     
-    setInputMediaStream(stream: MediaStream): void {
-        if (!stream) {
-            this.logger.info("Pausing video input");
+    setInputMediaStream(mediaStreamInput: MediaStream): void {
+        this.mediaStreamInput = mediaStreamInput;
+        if (!this.mediaStreamInput) {
+            this.logger.warn("Pausing video input");
+            this.videoInput.removeEventListener("canplay", this.processVideo);
             this.videoInput.srcObject = null;
             this.videoInput.pause();
+            return;
         }
-        if (stream.getVideoTracks().length == 0) {
+        if (this.mediaStreamInput.getVideoTracks().length == 0) {
             this.logger.error("No video tracks in input media stream, ignoring");
             return;
         }
-        this.logger.info("Setting input media stream");
+        this.logger.warn("Setting input media stream");
 
-        this.videoInput.addEventListener("canplay", (_ev) => this.processVideo(), false);
-        this.videoInput.srcObject = stream;
+        this.videoInput.addEventListener("canplay", this.processVideo, false);
+        this.videoInput.srcObject = this.mediaStreamInput;
         this.videoInput.play();
+    }
+
+    getInputMediaStream(): MediaStream {
+        return this.mediaStreamInput;
     }
 
     getOutputMediaStream(): MediaStream {
@@ -65,9 +73,9 @@ export default class DefaultVideoStreamProcessor implements VideoStreamProcessor
         this.targetFramerate = framerate;
     }
 
-    private processVideo(): void {
-        if (this.videoInput.paused) {
-            this.logger.info("Paused video input");
+    private processVideo = (_event: Event) => {
+        if (!this.videoInput.srcObject) {
+            this.logger.warn("no more srcObject");
             return;
         }
         if (this.videoWidth != this.videoInput.videoWidth
@@ -85,15 +93,15 @@ export default class DefaultVideoStreamProcessor implements VideoStreamProcessor
 
         this.canvasInputCtx.drawImage(this.videoInput, 0, 0, this.videoWidth, this.videoHeight);
         let processedCanvas: HTMLCanvasElement = this.canvasInput;
-        this.logger.info("Process");
+        this.logger.warn("Process");
 
         for (const stage of this.stages) {
-            this.logger.info("ProcessLoops");
+            this.logger.warn("ProcessLoops");
 
             processedCanvas = stage.processCanvas(processedCanvas);
         }
         this.canvasOutputCtx.drawImage(processedCanvas, 0, 0, this.videoWidth, this.videoHeight);
 
-        setTimeout(() => this.processVideo(), 1000 / this.targetFramerate);
+        setTimeout(this.processVideo, 1000 / this.targetFramerate);
     }
 }

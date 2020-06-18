@@ -15,6 +15,11 @@ export default interface VideoStreamProcessor {
   /**
    *
    */
+  getInputMediaStream(): MediaStream;
+
+  /**
+   *
+   */
   getOutputMediaStream(): MediaStream;
 
   /**

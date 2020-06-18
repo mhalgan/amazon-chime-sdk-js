@@ -12,7 +12,7 @@ import DefaultVideoTile from '../videotile/DefaultVideoTile';
 import Device from './Device';
 import DevicePermission from './DevicePermission';
 import DeviceSelection from './DeviceSelection';
-import MediaStreamPreprocessingPipeline from '../videostreamprocessor/VideoStreamProcessor';
+import VideoStreamProcessor from '../videostreamprocessor/VideoStreamProcessor';
 import VideoStreamProcessorStage from '../videostreamprocessor/VideoStreamProcessorStage';
 import { DefaultVideoStreamProcessor } from '..';
 
@@ -38,7 +38,7 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
   private audioInputDestinationNode: MediaStreamAudioDestinationNode | null = null;
   private audioInputSourceNode: MediaStreamAudioSourceNode | null = null;
 
-  private videoInputPreprocessingPipeline: MediaStreamPreprocessingPipeline | null = null;
+  private videoInputStreamProcessor: VideoStreamProcessor | null = null;
 
   private videoWidth: number = DefaultDeviceController.defaultVideoWidth;
   private videoHeight: number = DefaultDeviceController.defaultVideoHeight;
@@ -60,7 +60,7 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
       this.videoWidth = Math.ceil(this.videoWidth / 32) * 32;
       this.videoHeight = Math.ceil(this.videoHeight / 32) * 32;
     }
-    this.logger.info(
+    this.logger.warn(
       `DefaultDeviceController video dimension ${this.videoWidth} x ${this.videoHeight}`
     );
     // @ts-ignore
@@ -113,13 +113,13 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
   }
 
   addDeviceChangeObserver(observer: DeviceChangeObserver): void {
-    this.logger.info('adding device change observer');
+    this.logger.warn('adding device change observer');
     this.deviceChangeObservers.add(observer);
     this.trace('addDeviceChangeObserver');
   }
 
   removeDeviceChangeObserver(observer: DeviceChangeObserver): void {
-    this.logger.info('removing device change observer');
+    this.logger.warn('removing device change observer');
     this.deviceChangeObservers.delete(observer);
     this.trace('removeDeviceChangeObserver');
   }
@@ -192,27 +192,30 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
 
   setVideoInputProcessorStages(stages: VideoStreamProcessorStage[]): void {
     this.logger.warn(`setVideoInputProcessorStages ${stages.length}`);
-    if (!this.videoInputPreprocessingPipeline) {
-        this.videoInputPreprocessingPipeline = new DefaultVideoStreamProcessor(this.logger);
+    if (!this.videoInputStreamProcessor) {
+        this.videoInputStreamProcessor = new DefaultVideoStreamProcessor(this.logger);
     }
-    this.videoInputPreprocessingPipeline.setStages(stages);
-    if (stages.length == 0) {
-        this.logger.warn('setVideoInputProcessorStages2');
-        this.videoInputPreprocessingPipeline.setInputMediaStream(null);
-    }
+    this.videoInputStreamProcessor.setStages(stages);
+
     // Assume stages is always modified when this function is called and update active device
-    // so that it will be attached to the transceiver
-    if (this.activeDevices['video']) {
+    // via `chooseInputDevice` so that it will be attached to the transceiver
+    if (stages.length == 0) {
+        this.logger.warn('Resetting to previous media stream');
+        const inputMediaStream: MediaStream =  this.videoInputStreamProcessor.getInputMediaStream();
+        this.videoInputStreamProcessor.setInputMediaStream(null);
+        this.chooseInputDevice('video', inputMediaStream, false);
+    } else if (this.activeDevices['video']) {
+        this.logger.warn('Updating device to use video processor');
         this.chooseInputDevice('video', this.activeDevices['video'].stream, false);
     }
   }
 
   getVideoInputProcessorStages(): VideoStreamProcessorStage[] {
     this.logger.warn('getVideoInputProcessorStages');
-    if (!this.videoInputPreprocessingPipeline) {
+    if (!this.videoInputStreamProcessor) {
         return [];
     }
-    return this.videoInputPreprocessingPipeline.getStages();
+    return this.videoInputStreamProcessor.getStages();
   }
 
   chooseVideoInputQuality(
@@ -269,14 +272,14 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
       mediaStreamToRelease === this.audioInputDestinationNode.stream
     ) {
       // release the true audio stream if WebAudio is used.
-      this.logger.info('stopping audio track');
+      this.logger.warn('stopping audio track');
       tracksToStop = this.audioInputSourceNode.mediaStream.getTracks();
       this.audioInputSourceNode.disconnect();
     } else {
       tracksToStop = mediaStreamToRelease.getTracks();
     }
     for (const track of tracksToStop) {
-      this.logger.info(`stopping ${track.kind} track`);
+      this.logger.warn(`stopping ${track.kind} track`);
       track.stop();
     }
     for (const kind in this.activeDevices) {
@@ -427,14 +430,14 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     }
     if (!hasDeviceLabels) {
       try {
-        this.logger.info('attempting to trigger media device labels since they are hidden');
+        this.logger.warn('attempting to trigger media device labels since they are hidden');
         const triggerStream = await this.deviceLabelTrigger();
         devices = await navigator.mediaDevices.enumerateDevices();
         for (const track of triggerStream.getTracks()) {
           track.stop();
         }
       } catch (err) {
-        this.logger.info('unable to get media device labels');
+        this.logger.warn('unable to get media device labels');
       }
     }
     this.deviceInfoCache = devices;
@@ -517,11 +520,13 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
       this.lastNoVideoInputDeviceCount = this.inputDeviceCount;
       if (this.activeDevices[kind]) {
         this.releaseMediaStream(this.activeDevices[kind].stream);
+        this.videoInputStreamProcessor.setInputMediaStream(null);
         delete this.activeDevices[kind];
       }
       return DevicePermission.PermissionGrantedByBrowser;
     }
 
+    const videoProcessorStageCount = this.videoInputStreamProcessor ? this.videoInputStreamProcessor.getStages().length : 0;
     const proposedConstraints: MediaStreamConstraints | null = this.calculateMediaStreamConstraints(
       kind,
       device
@@ -529,16 +534,17 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     if (
       this.activeDevices[kind] &&
       this.activeDevices[kind].matchesConstraints(proposedConstraints) &&
-      this.activeDevices[kind].stream.active
+      this.activeDevices[kind].stream.active &&
+      !(kind === 'video' && videoProcessorStageCount > 0)
     ) {
-      this.logger.info(`reusing existing ${kind} device`);
+      this.logger.warn(`reusing existing ${kind} device`);
       return DevicePermission.PermissionGrantedPreviously;
     }
 
     const startTimeMs = Date.now();
     const newDevice: DeviceSelection = new DeviceSelection();
     try {
-      this.logger.info(
+      this.logger.warn(
         `requesting new ${kind} device with constraint ${JSON.stringify(proposedConstraints)}`
       );
       const stream = this.deviceAsMediaStream(device);
@@ -546,7 +552,7 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
         newDevice.stream = DefaultDeviceController.createEmptyAudioDevice() as MediaStream;
         newDevice.constraints = null;
       } else if (stream) {
-        this.logger.info(`using media stream ${stream.id} for ${kind} device`);
+        this.logger.warn(`using media stream ${stream.id} for ${kind} device`);
         newDevice.stream = stream;
         newDevice.constraints = proposedConstraints;
       } else {
@@ -591,7 +597,7 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
         ? DevicePermission.PermissionDeniedByBrowser
         : DevicePermission.PermissionDeniedByUser;
     }
-    this.logger.info(`got ${kind} device for constraints ${JSON.stringify(proposedConstraints)}`);
+    this.logger.warn(`got ${kind} device for constraints ${JSON.stringify(proposedConstraints)}`);
 
     const oldStream: MediaStream | null = this.activeDevices[kind]
       ? this.activeDevices[kind].stream
@@ -599,18 +605,17 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     this.activeDevices[kind] = newDevice;
 
     if (kind === 'video') {
-      const videoProcessorStageCount = this.videoInputPreprocessingPipeline.getStages().length;
       if (videoProcessorStageCount != 0 && newDevice) {
-        this.logger.info(`Connecting video input to video stream processor with ${videoProcessorStageCount} stages`);
-        this.videoInputPreprocessingPipeline.setInputMediaStream(newDevice.stream);
-        newDevice.stream = this.videoInputPreprocessingPipeline.getOutputMediaStream();
+        this.logger.warn(`Connecting video input to video stream processor with ${videoProcessorStageCount} stages`);
+        this.videoInputStreamProcessor.setInputMediaStream(newDevice.stream);
+        newDevice.stream = this.videoInputStreamProcessor.getOutputMediaStream();
       }
       if (
         !fromAcquire &&
         this.boundAudioVideoController &&
         this.boundAudioVideoController.videoTileController.hasStartedLocalVideoTile()
       ) {
-        this.logger.info('restarting local video to switch to new device');
+        this.logger.warn('restarting local video to switch to new device');
         this.boundAudioVideoController.restartLocalVideo(() => {
           // TODO: implement MediaStreamDestroyer
           // tracks of oldStream should be stopped when video tile is disconnected from MediaStream
@@ -632,10 +637,10 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
         try {
           await this.boundAudioVideoController.restartLocalAudio(() => {});
         } catch (error) {
-          this.logger.info(`cannot replace audio track due to: ${error.message}`);
+          this.logger.warn(`cannot replace audio track due to: ${error.message}`);
         }
       } else {
-        this.logger.info('no audio-video controller is bound to the device controller');
+        this.logger.warn('no audio-video controller is bound to the device controller');
       }
     }
     return Date.now() - startTimeMs <
@@ -743,14 +748,14 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     let existingConstraints: MediaTrackConstraints | null = null;
     if (!this.activeDevices[kind]) {
       if (kind === 'audio') {
-        this.logger.info(`no ${kind} device chosen, creating empty ${kind} device`);
+        this.logger.warn(`no ${kind} device chosen, creating empty ${kind} device`);
       } else {
         this.logger.error(`no ${kind} device chosen, stopping local video tile`);
         this.boundAudioVideoController.videoTileController.stopLocalVideoTile();
         throw new Error(`no ${kind} device chosen, stopping local video tile`);
       }
     } else {
-      this.logger.info(`checking whether existing ${kind} device can be reused`);
+      this.logger.warn(`checking whether existing ${kind} device can be reused`);
       const active = this.activeDevices[kind];
       // @ts-ignore
       existingConstraints = active.constraints ? active.constraints[kind] : null;
@@ -813,6 +818,6 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     if (typeof output !== 'undefined') {
       s += ` -> ${JSON.stringify(output)}`;
     }
-    this.logger.info(s);
+    this.logger.warn(s);
   }
 }
