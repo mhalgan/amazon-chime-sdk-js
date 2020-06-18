@@ -12,6 +12,9 @@ import DefaultVideoTile from '../videotile/DefaultVideoTile';
 import Device from './Device';
 import DevicePermission from './DevicePermission';
 import DeviceSelection from './DeviceSelection';
+import MediaStreamPreprocessingPipeline from '../videostreamprocessor/VideoStreamProcessor';
+import VideoStreamProcessorStage from '../videostreamprocessor/VideoStreamProcessorStage';
+import { DefaultVideoStreamProcessor } from '..';
 
 export default class DefaultDeviceController implements DeviceControllerBasedMediaStreamBroker {
   private static permissionGrantedOriginDetectionThresholdMs = 1000;
@@ -34,6 +37,8 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
   private audioInputContext: AudioContext | null = null;
   private audioInputDestinationNode: MediaStreamAudioDestinationNode | null = null;
   private audioInputSourceNode: MediaStreamAudioSourceNode | null = null;
+
+  private videoInputPreprocessingPipeline: MediaStreamPreprocessingPipeline | null = null;
 
   private videoWidth: number = DefaultDeviceController.defaultVideoWidth;
   private videoHeight: number = DefaultDeviceController.defaultVideoHeight;
@@ -183,6 +188,31 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
 
     this.trace('mixIntoAudioInput', stream.id);
     return node;
+  }
+
+  setVideoInputProcessorStages(stages: VideoStreamProcessorStage[]): void {
+    this.logger.warn(`setVideoInputProcessorStages ${stages.length}`);
+    if (!this.videoInputPreprocessingPipeline) {
+        this.videoInputPreprocessingPipeline = new DefaultVideoStreamProcessor(this.logger);
+    }
+    this.videoInputPreprocessingPipeline.setStages(stages);
+    if (stages.length == 0) {
+        this.logger.warn('setVideoInputProcessorStages2');
+        this.videoInputPreprocessingPipeline.setInputMediaStream(null);
+    }
+    // Assume stages is always modified when this function is called and update active device
+    // so that it will be attached to the transceiver
+    if (this.activeDevices['video']) {
+        this.chooseInputDevice('video', this.activeDevices['video'].stream, false);
+    }
+  }
+
+  getVideoInputProcessorStages(): VideoStreamProcessorStage[] {
+    this.logger.warn('getVideoInputProcessorStages');
+    if (!this.videoInputPreprocessingPipeline) {
+        return [];
+    }
+    return this.videoInputPreprocessingPipeline.getStages();
   }
 
   chooseVideoInputQuality(
@@ -569,6 +599,12 @@ export default class DefaultDeviceController implements DeviceControllerBasedMed
     this.activeDevices[kind] = newDevice;
 
     if (kind === 'video') {
+      const videoProcessorStageCount = this.videoInputPreprocessingPipeline.getStages().length;
+      if (videoProcessorStageCount != 0 && newDevice) {
+        this.logger.info(`Connecting video input to video stream processor with ${videoProcessorStageCount} stages`);
+        this.videoInputPreprocessingPipeline.setInputMediaStream(newDevice.stream);
+        newDevice.stream = this.videoInputPreprocessingPipeline.getOutputMediaStream();
+      }
       if (
         !fromAcquire &&
         this.boundAudioVideoController &&

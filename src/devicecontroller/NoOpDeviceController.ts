@@ -6,6 +6,7 @@ import DeviceControllerBasedMediaStreamBroker from '../mediastreambroker/DeviceC
 import NoOpMediaStreamBroker from '../mediastreambroker/NoOpMediaStreamBroker';
 import Device from './Device';
 import DevicePermission from './DevicePermission';
+import VideoStreamProcessorStage from '../videostreamprocessor/VideoStreamProcessorStage';
 
 export default class NoOpDeviceController extends NoOpMediaStreamBroker
   implements DeviceControllerBasedMediaStreamBroker {
@@ -49,6 +50,12 @@ export default class NoOpDeviceController extends NoOpMediaStreamBroker
 
   mixIntoAudioInput(_stream: MediaStream): MediaStreamAudioSourceNode {
     return null;
+  }
+
+  setVideoInputProcessorStages(_stages: VideoStreamProcessorStage[]): void {}
+
+  getVideoInputProcessorStages(): VideoStreamProcessorStage[] {
+      return [];
   }
 
   chooseVideoInputQuality(

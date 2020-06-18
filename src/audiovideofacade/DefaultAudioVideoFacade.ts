@@ -16,6 +16,7 @@ import DevicePermission from '../devicecontroller/DevicePermission';
 import RealtimeController from '../realtimecontroller/RealtimeController';
 import VideoTile from '../videotile/VideoTile';
 import VideoTileController from '../videotilecontroller/VideoTileController';
+import VideoStreamProcessorStage from '../videostreamprocessor/VideoStreamProcessorStage';
 
 export default class DefaultAudioVideoFacade implements AudioVideoFacade {
   constructor(
@@ -376,6 +377,17 @@ export default class DefaultAudioVideoFacade implements AudioVideoFacade {
   mixIntoAudioInput(stream: MediaStream): MediaStreamAudioSourceNode {
     const result = this.deviceController.mixIntoAudioInput(stream);
     this.trace('mixIntoAudioInput', stream.id);
+    return result;
+  }
+
+  setVideoInputProcessorStages(stages: VideoStreamProcessorStage[]): void {
+    this.deviceController.setVideoInputProcessorStages(stages);
+    this.trace('setVideoInputProcessorStages');
+  }
+
+  getVideoInputProcessorStages(): VideoStreamProcessorStage[] {
+    const result = this.deviceController.getVideoInputProcessorStages();
+    this.trace('getVideoInputProcessorStages');
     return result;
   }
 

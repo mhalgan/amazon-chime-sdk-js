@@ -4,6 +4,7 @@
 import DeviceChangeObserver from '../devicechangeobserver/DeviceChangeObserver';
 import Device from './Device';
 import DevicePermission from './DevicePermission';
+import VideoStreamProcessorStage from '../videostreamprocessor/VideoStreamProcessorStage';
 
 /**
  * [[DeviceController]] keeps track of the devices being used for audio input
@@ -118,6 +119,16 @@ export default interface DeviceController {
    * Mixes the audio from the given media stream into the main audio input stream.
    */
   mixIntoAudioInput(stream: MediaStream): MediaStreamAudioSourceNode;
+
+  /**
+   * Enables video input preprocessing
+   */
+  setVideoInputProcessorStages(stages: VideoStreamProcessorStage[]): void;
+
+  /**
+   * Disables video input preprocessing
+   */
+  getVideoInputProcessorStages(): VideoStreamProcessorStage[];
 
   /**
    * Sets the video input quality parameters to request when enabling video. These settings

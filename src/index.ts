@@ -294,6 +294,15 @@ import WebMMediaRecordingFactory from './mediarecording/WebMMediaRecordingFactor
 import WebSocketAdapter from './websocketadapter/WebSocketAdapter';
 import WebSocketReadyState from './websocketadapter/WebSocketReadyState';
 
+import DefaultVideoStreamProcessor from './videostreamprocessor/DefaultVideoStreamProcessor';
+import NoopVideoStreamProcessorStage from './videostreamprocessor/NoopVideoStreamProcessorStage';
+import EmojifyVideoStreamProcessorStage from './videostreamprocessor/EmojifyVideoStreamProcessorStage';
+export {
+    DefaultVideoStreamProcessor,
+    NoopVideoStreamProcessorStage,
+    EmojifyVideoStreamProcessorStage
+}
+
 export {
   ActiveSpeakerDetector,
   ActiveSpeakerDetectorFacade,

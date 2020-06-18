@@ -32,7 +32,10 @@ import {
   Versioning,
   VideoTileState,
   ClientVideoStreamReceivingReport,
+//   NoopVideoStreamProcessorStage,
+  EmojifyVideoStreamProcessorStage,
 } from '../../../../src/index';
+import VideoStreamProcessorStage from '../../../../src/videostreamprocessor/VideoStreamProcessorStage';
 
 class DemoTileOrganizer {
   // this is index instead of length
@@ -110,6 +113,8 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
   static readonly DID: string = '+17035550122';
   static readonly BASE_URL: string = [location.protocol, '//', location.host, location.pathname.replace(/\/*$/, '/').replace('/v2', '')].join('');
   static testVideo: string = 'https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c0/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.360p.vp9.webm';
+  static readonly BACKGROUND_BLUR_BUTTON_TITLE: string = "Toggle background blur";
+  static readonly EMOJIFY_BUTTON_TITLE: string = "Toggle emojify";
   static readonly LOGGER_BATCH_SIZE: number = 85;
   static readonly LOGGER_INTERVAL_MS: number = 1150;
   static readonly DATA_MESSAGE_TOPIC: string = "chat";
@@ -143,6 +148,9 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
   };
 
   contentShareType: ContentShareType = ContentShareType.ScreenCapture;
+
+  isBackgroundBlurEnabled = false;
+  isEmojifyEnabled = false;
 
   // feature flags
   enableWebAudio = false;
@@ -985,6 +993,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
     elementId: string,
     genericName: string,
     devices: MediaDeviceInfo[],
+    additionalDevices: string[],
     additionalOptions: string[],
     callback: (name: string) => void
   ): void {
@@ -997,19 +1006,32 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
         callback(devices[i].deviceId);
       });
     }
-    if (additionalOptions.length > 0) {
+    if (additionalDevices.length > 0) {
       this.createDropdownMenuItem(menu, '──────────', () => {}).classList.add('text-center');
-      for (const additionalOption of additionalOptions) {
+      for (const additionalDevice of additionalDevices) {
         this.createDropdownMenuItem(
           menu,
-          additionalOption,
+          additionalDevice,
           () => {
-            callback(additionalOption);
+            callback(additionalDevice);
           },
-          `${elementId}-${additionalOption.replace(/\s/g, '-')}`
+          `${elementId}-${additionalDevice.replace(/\s/g, '-')}`
         );
       }
     }
+    if (additionalOptions.length > 0) {
+        this.createDropdownMenuItem(menu, '──────────', () => {}).classList.add('text-center');
+        for (const additionalOption of additionalOptions) {
+          this.createDropdownMenuItem(
+            menu,
+            additionalOption,
+            () => {
+              callback(additionalOption);
+            },
+            `${elementId}-${additionalOption.replace(/\s/g, '-')}`
+          );
+        }
+      }
     if (!menu.firstElementChild) {
       this.createDropdownMenuItem(menu, 'Device selection unavailable', () => {});
     }
@@ -1052,6 +1074,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
       genericName,
       await this.audioVideo.listAudioInputDevices(),
       additionalDevices,
+      [],
       async (name: string) => {
         await this.audioVideo.chooseAudioInputDevice(this.audioInputSelectionToDevice(name));
       }
@@ -1061,6 +1084,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
   async populateVideoInputList(): Promise<void> {
     const genericName = 'Camera';
     const additionalDevices = ['None', 'Blue', 'SMPTE Color Bars'];
+    const additionalOptions = [DemoMeetingApp.BACKGROUND_BLUR_BUTTON_TITLE, DemoMeetingApp.EMOJIFY_BUTTON_TITLE];
     this.populateDeviceList(
       'video-input',
       genericName,
@@ -1072,7 +1096,24 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
       genericName,
       await this.audioVideo.listVideoInputDevices(),
       additionalDevices,
+      additionalOptions,
       async (name: string) => {
+        if (name == DemoMeetingApp.BACKGROUND_BLUR_BUTTON_TITLE || name == DemoMeetingApp.EMOJIFY_BUTTON_TITLE) {
+            if (name == DemoMeetingApp.BACKGROUND_BLUR_BUTTON_TITLE) {
+                this.isBackgroundBlurEnabled = !this.isBackgroundBlurEnabled;
+            } else if (name == DemoMeetingApp.EMOJIFY_BUTTON_TITLE) {
+                this.isEmojifyEnabled = !this.isEmojifyEnabled;
+            }
+            var stages: VideoStreamProcessorStage[] = [];
+            if (this.isBackgroundBlurEnabled) {
+                stages.push(new EmojifyVideoStreamProcessorStage());
+            } 
+            if (this.isEmojifyEnabled) {
+                stages.push(new EmojifyVideoStreamProcessorStage());
+            } 
+            this.audioVideo.setVideoInputProcessorStages(stages);
+            return;
+        }
         try {
           await this.openVideoInputFromSelection(name, false);
         } catch (err) {
@@ -1100,6 +1141,7 @@ export class DemoMeetingApp implements AudioVideoObserver, DeviceChangeObserver,
       genericName,
       await this.audioVideo.listAudioOutputDevices(),
       additionalDevices,
+      [],
       async (name: string) => {
         await this.audioVideo.chooseAudioOutputDevice(name);
       }
